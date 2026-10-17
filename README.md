@@ -18,7 +18,7 @@ Get `PPSA99891.zip` from [Releases](https://github.com/Yahballon/ThemeChanger/re
 - Signal Companion controls and diagnostics.
 
 ## Compatibility
-
+![ThemeChanger](screenshots/1.png)
 Signal's regular firmware support is **9.00+**; upstream testing was on PS5 Pro 13.60. The included firmware 5.10 LED test is experimental and unconfirmed.
 
 Some H.264 Level 5.0 videos still stall in the PS5 ShellUI decoder. Unmodified smooth Level 5.0 playback and automatic transcoding are **not fixed** in v0.3.21.
