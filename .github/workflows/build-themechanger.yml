@@ -1,0 +1,307 @@
+name: Build PS5 ThemeChanger
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'homebrew/themechanger/**'
+      - '.github/workflows/build-themechanger.yml'
+  pull_request:
+    paths:
+      - 'homebrew/themechanger/**'
+      - '.github/workflows/build-themechanger.yml'
+permissions:
+  contents: write
+jobs:
+  native-ps5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 lld-18 llvm-18 ninja-build make wget curl unzip tar git python3 python3-pil pkg-config ca-certificates ffmpeg g++ libssl-dev
+      - name: Discover complete MotionBGS sitemap and tag catalog
+        timeout-minutes: 15
+        run: python3 homebrew/themechanger/assets/motionbgs_catalog.py
+      - name: Probe MotionBGS HD MP4 response
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          rows=[l.split('\t') for l in Path('homebrew/themechanger/generated/motionbgs/catalog.tsv').read_text().splitlines() if l and not l.startswith('#')]
+          for row in [r for r in rows if r[3].startswith("https://motionbgs.com/dl/hd/")][:3]:
+              url=row[3]
+              assert url.startswith('https://motionbgs.com/dl/hd/')
+              req=Request(url,headers={'User-Agent':'Mozilla/5.0','Accept':'video/mp4,*/*','Range':'bytes=0-63'})
+              with urlopen(req,timeout=15) as response:
+                  data=response.read(64)
+                  print(row[1],response.status,response.headers.get('Content-Type'),response.geturl(),'ftyp=',data[4:8],flush=True)
+                  assert data[4:8]==b'ftyp' and 'video' in response.headers.get('Content-Type','')
+          PY
+      - name: Prepare existing native PS5 UI kit
+        run: |
+          git clone --depth=1 https://github.com/Yahballon/PS5-DevBridge.git /tmp/devbridge
+          cp -a /tmp/devbridge/templates/simple-calc ./app
+          cp -a homebrew/themechanger/native/. app/src/
+          cp homebrew/themechanger/assets/icon0.png app/sce_sys/icon0.png
+          # v0.3.10/v0.3.11 left an experimental FFmpeg/x264 unit in the
+          # repository. It MUST NOT enter the known-good PS5 executable.
+          rm -f app/src/smooth_video.cpp
+
+          curl --fail --location --silent --show-error https://raw.githubusercontent.com/nothings/stb/2c980bb59875b0d32144a71867fbdebb2f77cd20/stb_image.h -o app/src/stb_image.h
+          mkdir -p app/assets/motionbgs
+          cp homebrew/themechanger/generated/motionbgs/catalog.tsv app/assets/motionbgs/catalog.tsv
+          python3 - <<'PY'
+          from pathlib import Path
+          pem=Path('/etc/ssl/certs/ca-certificates.crt').read_text()
+          Path('app/src/ca_bundle.inc').write_text('static constexpr char kCaBundle[] = R"PS5CABUNDLE('+pem+')PS5CABUNDLE";\n')
+          PY
+          python3 - <<'PY'
+          import pathlib,json
+          d=json.loads(pathlib.Path('homebrew/themechanger/app.json').read_text())
+          p=pathlib.Path('app/sce_sys/param.json')
+          j=json.loads(p.read_text())
+          j.update(titleId=d['titleId'],conceptId=d['titleId'][-5:],contentId=d['contentId'],contentVersion=d['contentVersion'])
+          j['localizedParameters']['en-US']['titleName']=d['name']
+          p.write_text(json.dumps(j,indent=2)+'\n')
+          PY
+      - name: Prepare pinned experimental Signal sources
+        run: |
+          git clone https://github.com/Marice/ps5-signal.git /tmp/theme-signal
+          git -C /tmp/theme-signal checkout --detach 8ed455197a8643302a066b7b0e97972036998304
+          python3 homebrew/themechanger/signal_build/patch_signal.py /tmp/theme-signal
+          gcc -std=c11 -D_DEFAULT_SOURCE -pthread -I/tmp/theme-signal/tests/include -I/tmp/theme-signal/src \
+            -fsyntax-only /tmp/theme-signal/src/indicator.c /tmp/theme-signal/src/player.c \
+            /tmp/theme-signal/src/http.c /tmp/theme-signal/src/tc_indicator_compat.c
+          gcc -std=c11 -D_DEFAULT_SOURCE -O2 -pthread -I/tmp/theme-signal/src \
+            -DTC_BACKUP_PATH='"/tmp/tc-led-test-backup.bin"' \
+            -DTC_HW_LOG_PATH='"/tmp/tc-led-test-hardware.log"' \
+            homebrew/themechanger/tests/test_signal_compat.c \
+            /tmp/theme-signal/src/tc_indicator_compat.c -o /tmp/tc-led-compat-test
+          /tmp/tc-led-compat-test
+      - name: Test integrated Signal Companion
+        run: |
+          g++ -std=c++20 -O2 -Iapp/src homebrew/themechanger/tests/test_navigation.cpp -o /tmp/themechanger-navigation-test
+          /tmp/themechanger-navigation-test
+          g++ -std=c++20 -O2 -pthread -Iapp/src -Ihomebrew/themechanger/tests \
+            homebrew/themechanger/tests/test_signal_panel.cpp \
+            app/src/signal_panel.cpp app/src/signal/*.cpp app/src/core/save_file.cpp app/src/theme_log.cpp \
+            -o /tmp/themechanger-signal-test
+          /tmp/themechanger-signal-test
+          g++ -std=c++20 -O2 -pthread -Iapp/src \
+            homebrew/themechanger/tests/test_signal_transport.cpp \
+            app/src/signal/service.cpp app/src/signal/model.cpp app/src/signal/json.cpp \
+            app/src/core/save_file.cpp app/src/theme_log.cpp -o /tmp/themechanger-signal-transport-test
+          /tmp/themechanger-signal-transport-test
+      - name: Verify bounded persistent wallpaper recovery
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          main=Path('homebrew/themechanger/native/main.cpp').read_text()
+          catalog=Path('homebrew/themechanger/native/motion_catalog.cpp').read_text()
+          storage=Path('homebrew/themechanger/native/wallpaper_storage.hpp').read_text()
+          assert 'wallpaper_storage::recover_indexed()' in main
+          assert 'online.discover_legacy(12)' in main
+          assert 'wallpaper_storage::kArchive' in catalog
+          assert 'wallpaper_storage::remember(name)' in catalog
+          assert 'WALLPAPER_ARCHIVED' in catalog
+          assert 'saved_names()' in storage
+          assert 'opendir(kArchive)' not in storage
+          assert 'char chunk[8192]' in storage
+          assert 'smooth_video.hpp' not in main and 'smooth_video.hpp' not in catalog
+          assert not Path('app/src/smooth_video.cpp').exists()
+          print('Bounded indexed backup/restore; conservative stable media path')
+          PY
+          g++ -std=c++20 -O2 -Ihomebrew/themechanger/native \
+            homebrew/themechanger/tests/test_wallpaper_storage.cpp \
+            -o /tmp/themechanger-storage-test
+          sudo install -d -m 0777 /data/ThemeChanger /data/LiveShell
+          /tmp/themechanger-storage-test
+      - name: Verify native MotionBGS HTTPS downloader with real HD MP4
+        timeout-minutes: 2
+        run: |
+          g++ -std=c++20 -O2 -pthread -Iapp/src \
+            homebrew/themechanger/tests/test_native_download.cpp \
+            app/src/motion_download.cpp -lssl -lcrypto \
+            -o /tmp/themechanger-native-http-test
+          preview=$(python3 - <<'PY'
+          from pathlib import Path
+          rows=[line.split('\t') for line in Path('homebrew/themechanger/generated/motionbgs/catalog.tsv').read_text().splitlines() if not line.startswith('#')]
+          urls=[row[4] for row in rows if len(row)>=5 and row[4].startswith('https://motionbgs.com/')]
+          print(urls[0] if urls else '')
+          PY
+          )
+          test -n "$preview"
+          timeout 65s /tmp/themechanger-native-http-test "$preview"
+      - name: Test LiveShell API response and playback selection
+        timeout-minutes: 2
+        run: |
+          g++ -std=c++20 -O2 -pthread -Ihomebrew/themechanger/native \
+            homebrew/themechanger/tests/mock_liveshell.cpp \
+            homebrew/themechanger/native/liveshell_client.cpp \
+            homebrew/themechanger/native/theme_log.cpp \
+            -o /tmp/themechanger-live-api-test
+          python3 homebrew/themechanger/tests/mock_liveshell.py >/tmp/themechanger-mock.log 2>&1 &
+          mock_pid=$!
+          trap 'kill "$mock_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          # The client now inspects the selected file's MP4 headers. Give the
+          # REST mock a real short H.264 fixture, not a nonexistent filename.
+          sudo install -d -m 0777 /data/LiveShell/video
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i color=c=blue:size=128x128:rate=24 \
+            -t 1 -c:v libx264 -pix_fmt yuv420p -profile:v high -level:v 4.1 \
+            -movflags +faststart /data/LiveShell/video/MotionBGS-neon.mp4
+          /tmp/themechanger-live-api-test
+      - name: Test H264 level normalization (black wallpaper compatibility)
+        run: |
+          g++ -std=c++20 -O2 -Ihomebrew/themechanger/native \
+            homebrew/themechanger/tests/test_mp4_compat.cpp -o /tmp/themechanger-mp4-level-test
+          /tmp/themechanger-mp4-level-test
+          python3 - <<'PY'
+          from pathlib import Path
+          code=Path('homebrew/themechanger/native/liveshell_client.cpp').read_text()
+          assert 'mp4compat::normalize(' in code
+          assert 'MP4_COMPAT' in code and 'MP4_INCOMPATIBLE' in code
+          PY
+      - name: Prepare PS5 graphics SDK
+        working-directory: app
+        env:
+          PS5_CLANG: clang-18
+          USE_CCACHE: '0'
+          BUILD_JOBS: '4'
+        run: bash tools/prepare-opengl.sh
+      - name: Build opt-in Signal compatibility service with upstream SDK v0.43
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            https://github.com/ps5-payload-dev/sdk/releases/download/v0.43/ps5-payload-sdk.zip \
+            -o /tmp/theme-signal-sdk.zip
+          echo 'a9cc9929f21b2b2c5d5b309f3bab4997067c45281c0622cf4838b1aecba66fcb  /tmp/theme-signal-sdk.zip' | sha256sum --check --strict
+          mkdir -p /tmp/theme-signal-sdk app/assets/payload
+          unzip -q /tmp/theme-signal-sdk.zip -d /tmp/theme-signal-sdk
+          sdk_mk=$(find /tmp/theme-signal-sdk -path '*/toolchain/prospero.mk' -print -quit)
+          test -n "$sdk_mk"
+          signal_sdk="${sdk_mk%/toolchain/prospero.mk}"
+          export PATH="/usr/lib/llvm-18/bin:$signal_sdk/bin:$PATH"
+          export PS5_CLANG=clang-18
+          make -C /tmp/theme-signal PS5_PAYLOAD_SDK="$signal_sdk" all
+          cp /tmp/theme-signal/ps5-signal.elf app/assets/payload/
+          cp /tmp/theme-signal/LICENSE app/assets/payload/ps5-signal-LICENSE
+          python3 - <<'PY'
+          import pathlib,json,hashlib
+          root=pathlib.Path('app/assets/payload')
+          blob=(root/'ps5-signal.elf').read_bytes()
+          assert b'0.1.0-tc-compat1' in blob
+          (root/'signal-build.json').write_text(json.dumps({'build':'0.1.0-tc-compat1','sdk':'v0.43','source':'8ed455197a8643302a066b7b0e97972036998304','sha256':hashlib.sha256(blob).hexdigest(),'experimental':True,'default_mode':'original; compatibility requires explicit user selection'},indent=2)+'\n')
+          PY
+      - name: Compile integrated LiveShell from GPL source (no Media tile)
+        timeout-minutes: 35
+        env:
+          PS5_CLANG: clang-18
+        run: |
+          set -euo pipefail
+          git clone --depth=1 https://github.com/aydencharles/onionHEN.git /tmp/theme-onionhen
+          git clone --depth=1 --branch v1.1 https://github.com/ZiZc3/LiveShell.git /tmp/theme-upstream-liveshell
+          python3 homebrew/themechanger/liveshell_build/patch_liveshell.py /tmp/theme-upstream-liveshell
+          mkdir -p /tmp/theme-onionhen/source/liveshell
+          cp /tmp/theme-upstream-liveshell/src/* /tmp/theme-onionhen/source/liveshell/
+          cp /tmp/theme-upstream-liveshell/assets/icon0.png /tmp/theme-onionhen/source/liveshell/icon0.png
+          # Build only payload dependencies required by LiveShell.
+          # The unrelated OnionHEN utility app requires PS5 libcurl/Keystone,
+          # which ThemeChanger neither links nor ships.
+          sed -i -e '/^add_subdirectory(util)$/d' \
+                 -e '/^add_subdirectory(bootstrapper)$/d' \
+                 -e '/^add_subdirectory(unpacker)$/d' \
+                 -e '/^add_subdirectory(daemon)$/d' \
+                 -e '/^add_subdirectory(shellui)$/d' \
+                 /tmp/theme-onionhen/source/CMakeLists.txt
+          printf '\nadd_subdirectory(liveshell)\n' >> /tmp/theme-onionhen/source/CMakeLists.txt
+          bash /tmp/theme-onionhen/scripts/sync_dependencies.sh
+          export PS5_PAYLOAD_SDK="$GITHUB_WORKSPACE/app/.deps/native/ps5-payload-sdk"
+          export PATH="/usr/lib/llvm-18/bin:$PS5_PAYLOAD_SDK/bin:$PATH"
+          export LLVM_CONFIG=/usr/lib/llvm-18/bin/llvm-config
+          "$PS5_PAYLOAD_SDK/bin/prospero-cmake" \
+            -S /tmp/theme-onionhen/source \
+            -B /tmp/theme-onionhen/build \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DONIONHEN_KSTUFF_ELF=/tmp/theme-onionhen/.cache/dependencies/kstuff.elf \
+            -DPS5_PAYLOAD_SDK="$PS5_PAYLOAD_SDK"
+          cmake --build /tmp/theme-onionhen/build -j 4 --target liveshell
+          cp /tmp/theme-onionhen/build/bin/liveshell.elf app/liveshell.elf
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('/tmp/theme-onionhen/source/liveshell/liveshell_daemon.cpp').read_text()
+          elf=Path('app/liveshell.elf').read_bytes()
+          assert 'strcmp(id, "PPSA99891") != 0' in src
+          assert 'start_thread(after_start_thread);' not in src
+          web=Path('/tmp/theme-onionhen/source/liveshell/liveshell_web.cpp').read_text()
+          assert 'themechanger_engine' in web and '0.3.6' in web
+          assert elf.startswith(b'\x7fELF\x02') and len(elf)>100000
+          print('Custom GPL LiveShell, no Media tile, gamepause fix:',len(elf),'bytes')
+          PY
+      - name: Prepare POSIX compat
+        run: |
+          mkdir -p app/build/jb-json
+          cp app/.deps/native/ps5-payload-sdk/target/lib/libc.a app/build/jb-json/libjb-posix.a
+          llvm-objcopy-18 --redefine-sym=openlog=jb_sdk_openlog --redefine-sym=closelog=jb_sdk_closelog --redefine-sym=mkstemp=jb_sdk_mkstemp --redefine-sym=mkstemps=jb_sdk_mkstemps --redefine-sym=getpwuid_r=jb_sdk_getpwuid_r app/build/jb-json/libjb-posix.a
+      - name: Build FSELF installer
+        working-directory: app
+        env:
+          PS5_CLANG: clang-18
+          USE_CCACHE: '0'
+          BUILD_JOBS: '4'
+        run: make USE_CCACHE=0 BUILD_JOBS=4 PACBREW_PACKAGES=openssl APP_ROOT_FILES=liveshell.elf app
+      - name: Verify installer and assets
+        run: |
+          python3 - <<'PY'
+          import pathlib,zipfile,struct,json,hashlib
+          title='PPSA99891'
+          root=pathlib.Path('app/dist')/title
+          binary=(root/'eboot.bin').read_bytes()
+          assert len(binary)>1000
+          assert struct.unpack('<I',binary[:4])[0]==0x1d3d154f
+          j=json.loads((root/'sce_sys/param.json').read_text())
+          assert j['titleId']==title
+          icon=(root/'sce_sys/icon0.png').read_bytes()
+          assert icon==pathlib.Path('homebrew/themechanger/assets/icon0.png').read_bytes()
+          assert icon[:8]==b'\x89PNG\r\n\x1a\n' and struct.unpack('>II',icon[16:24])==(512,512)
+          assert not (root/'assets/wallpapers').exists(), 'Old bundled wallpapers must not be shipped'
+          app_src=pathlib.Path('homebrew/themechanger/native/main.cpp').read_text()
+          assert 'ThemeChanger-baseball.png' not in app_src
+          assert 'const int total=12+' not in app_src
+          assert 'consume_installed()' in app_src
+          assert (root/'liveshell.elf').stat().st_size>100000
+          signal=(root/'assets/payload/ps5-signal.elf').read_bytes()
+          assert signal[:5]==b'\x7fELF\x02' and 64<len(signal)<4194304
+          assert b'0.1.0-tc-compat1' in signal
+          signal_build=json.loads((root/'assets/payload/signal-build.json').read_text())
+          assert hashlib.sha256(signal).hexdigest()==signal_build['sha256'] and signal_build['experimental']
+          manifest=(root/'assets/motionbgs/catalog.tsv').read_text()
+          assert len(manifest.splitlines())>8000, 'Full sitemap should contain thousands of desktop wallpaper entries'
+          assert any(len(r.split('\t'))>=6 for r in manifest.splitlines()[1:])
+          assert 'https://motionbgs.com/dl/hd/' in manifest
+          assert '/i/c/960x540/media/' in manifest
+          with zipfile.ZipFile(f'app/dist/{title}.zip') as z:
+              assert z.testzip() is None
+              assert f'{title}/eboot.bin' in z.namelist()
+              assert z.read(f'{title}/sce_sys/icon0.png')==icon
+              assert f'{title}/liveshell.elf' in z.namelist()
+              assert z.read(f'{title}/assets/payload/ps5-signal.elf')==signal
+              assert f'{title}/assets/motionbgs/catalog.tsv' in z.namelist()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ThemeChanger-v0.3.21-PPSA99891
+          path: app/dist/PPSA99891.zip
+          if-no-files-found: error
+      - name: Publish TESTBUILD-compatible release
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view themechanger-v0.3.21 >/dev/null 2>&1; then exit 0; fi
+          gh release create themechanger-v0.3.21 app/dist/PPSA99891.zip --target "$GITHUB_SHA" --title "ThemeChanger v0.3.21" --notes-file homebrew/themechanger/RELEASE_NOTES.md
