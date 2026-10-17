@@ -2,6 +2,8 @@
 
 PS5 wallpaper manager by **YAHBALLON**.
 
+9660+ Live Wallpapers 4K
+
 ![ThemeChanger](homebrew/themechanger/assets/icon0.png)
 
 ## Download
