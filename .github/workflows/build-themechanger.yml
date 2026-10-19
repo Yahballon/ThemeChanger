@@ -69,20 +69,25 @@ jobs:
           j['localizedParameters']['en-US']['titleName']=d['name']
           p.write_text(json.dumps(j,indent=2)+'\n')
           PY
-      - name: Prepare pinned experimental Signal sources
+      - name: Prepare pinned Signal sources with firmware 5.10 LED support
         run: |
           git clone https://github.com/Marice/ps5-signal.git /tmp/theme-signal
           git -C /tmp/theme-signal checkout --detach 8ed455197a8643302a066b7b0e97972036998304
           python3 homebrew/themechanger/signal_build/patch_signal.py /tmp/theme-signal
           gcc -std=c11 -D_DEFAULT_SOURCE -pthread -I/tmp/theme-signal/tests/include -I/tmp/theme-signal/src \
             -fsyntax-only /tmp/theme-signal/src/indicator.c /tmp/theme-signal/src/player.c \
-            /tmp/theme-signal/src/http.c /tmp/theme-signal/src/tc_indicator_compat.c
+            /tmp/theme-signal/src/http.c /tmp/theme-signal/src/tc_indicator_compat.c /tmp/theme-signal/src/tc_effect.c /tmp/theme-signal/src/tc_effect_pattern.c
           gcc -std=c11 -D_DEFAULT_SOURCE -O2 -pthread -I/tmp/theme-signal/src \
             -DTC_BACKUP_PATH='"/tmp/tc-led-test-backup.bin"' \
             -DTC_HW_LOG_PATH='"/tmp/tc-led-test-hardware.log"' \
             homebrew/themechanger/tests/test_signal_compat.c \
             /tmp/theme-signal/src/tc_indicator_compat.c -o /tmp/tc-led-compat-test
           /tmp/tc-led-compat-test
+          gcc -std=c11 -D_DEFAULT_SOURCE -O2 -pthread -I/tmp/theme-signal/src \
+            -DTC_EFFECT_PATH='"/tmp/tc-effect-test.txt"' \
+            homebrew/themechanger/tests/test_signal_effects.c \
+            /tmp/theme-signal/src/tc_effect.c /tmp/theme-signal/src/tc_effect_pattern.c -o /tmp/tc-led-effects-test
+          /tmp/tc-led-effects-test
       - name: Test integrated Signal Companion
         run: |
           g++ -std=c++20 -O2 -Iapp/src homebrew/themechanger/tests/test_navigation.cpp -o /tmp/themechanger-navigation-test
@@ -195,8 +200,8 @@ jobs:
           import pathlib,json,hashlib
           root=pathlib.Path('app/assets/payload')
           blob=(root/'ps5-signal.elf').read_bytes()
-          assert b'0.1.0-tc-compat1' in blob
-          (root/'signal-build.json').write_text(json.dumps({'build':'0.1.0-tc-compat1','sdk':'v0.43','source':'8ed455197a8643302a066b7b0e97972036998304','sha256':hashlib.sha256(blob).hexdigest(),'experimental':True,'default_mode':'original; compatibility requires explicit user selection'},indent=2)+'\n')
+          assert b'0.1.0-tc-led510' in blob
+          (root/'signal-build.json').write_text(json.dumps({'build':'0.1.0-tc-led510','sdk':'v0.43','source':'8ed455197a8643302a066b7b0e97972036998304','sha256':hashlib.sha256(blob).hexdigest(),'experimental':False,'default_mode':'5.10 auto-detected; durable backup and explicit restore'},indent=2)+'\n')
           PY
       - name: Compile integrated LiveShell from GPL source (no Media tile)
         timeout-minutes: 35
@@ -277,9 +282,9 @@ jobs:
           assert (root/'liveshell.elf').stat().st_size>100000
           signal=(root/'assets/payload/ps5-signal.elf').read_bytes()
           assert signal[:5]==b'\x7fELF\x02' and 64<len(signal)<4194304
-          assert b'0.1.0-tc-compat1' in signal
+          assert b'0.1.0-tc-led510' in signal
           signal_build=json.loads((root/'assets/payload/signal-build.json').read_text())
-          assert hashlib.sha256(signal).hexdigest()==signal_build['sha256'] and signal_build['experimental']
+          assert hashlib.sha256(signal).hexdigest()==signal_build['sha256'] and not signal_build['experimental']
           manifest=(root/'assets/motionbgs/catalog.tsv').read_text()
           assert len(manifest.splitlines())>8000, 'Full sitemap should contain thousands of desktop wallpaper entries'
           assert any(len(r.split('\t'))>=6 for r in manifest.splitlines()[1:])
@@ -295,7 +300,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: ThemeChanger-v0.3.21-PPSA99891
+          name: ThemeChanger-v0.3.22-PPSA99891
           path: app/dist/PPSA99891.zip
           if-no-files-found: error
       - name: Publish TESTBUILD-compatible release
@@ -303,5 +308,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view themechanger-v0.3.21 >/dev/null 2>&1; then exit 0; fi
-          gh release create themechanger-v0.3.21 app/dist/PPSA99891.zip --target "$GITHUB_SHA" --title "ThemeChanger v0.3.21" --notes-file homebrew/themechanger/RELEASE_NOTES.md
+          if gh release view themechanger-v0.3.22 >/dev/null 2>&1; then exit 0; fi
+          gh release create themechanger-v0.3.22 app/dist/PPSA99891.zip --target "$GITHUB_SHA" --title "ThemeChanger v0.3.22" --notes-file homebrew/themechanger/RELEASE_NOTES.md

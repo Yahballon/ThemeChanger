@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Experimental opt-in GameOS LED path. No new ioctl numbers or kernel offsets.
+// Firmware 5.10 LED hold programs, verified through DevBridge on hardware.
 #include "tc_indicator_compat.h"
 #include "indicator.h"
 #include <errno.h>
@@ -18,6 +18,9 @@
 static pthread_mutex_t compat_lock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t log_lock=PTHREAD_MUTEX_INITIALIZER;
 static bool selected,enabled,have_backup;
+static bool automatic;
+void tc_compat_set_automatic(bool value){automatic=value;}
+bool tc_compat_automatic(void){return automatic;}
 static uint8_t before[130];
 void tc_hw_log(const char* event,const char* detail){
  pthread_mutex_lock(&log_lock);
@@ -35,8 +38,6 @@ static void dump(const char* event,const uint8_t* state){
 }
 bool tc_compat_patch(uint8_t state[130],int blue,int white,int amber){
  if(blue<0||blue>255||white<0||white>255||amber<0||amber>255)return false;
- // An all-zero SET is rejected on some controllers. Do not guess an off command.
- if(!(blue||white||amber))return false;
  const int count=state[2]|((int)state[3]<<8);
  if(state[0]!=0||state[1]!=0||count!=3)return false;
  const int ids[]={1,17,33},levels[]={blue,white,amber};
@@ -50,10 +51,12 @@ bool tc_compat_patch(uint8_t state[130],int blue,int white,int amber){
   positions[channel]=at;
  }
  for(int c=0;c<3;c++)if(positions[c]<0)return false;
- // Preserve every program, flag and timing byte; replace only its level bytes.
+ // Replace each animation with the single-step hold observed on firmware 5.10.
  for(int c=0;c<3;c++){
-  int at=positions[c];
-  for(int n=0;n<state[at+1];n++)state[at+3+n*5]=(uint8_t)levels[c];
+  int at=positions[c];uint8_t id=state[at];
+  memset(state+at,0,42);
+  const uint8_t hold[]={id,1,2,(uint8_t)levels[c],2,1,0};
+  memcpy(state+at,hold,sizeof(hold));
  }
  return true;
 }
@@ -81,7 +84,7 @@ bool tc_compat_enable(void){
   ok=tc_compat_patch(check,1,1,1);
   dump("BACKUP_READ",state);
  }
- if(ok){
+ if(ok&&!(have_backup&&selected)){
   memcpy(before,state,130);have_backup=save_backup();ok=have_backup;
  }
  enabled=ok;if(ok)selected=true;
@@ -106,25 +109,25 @@ bool tc_compat_restore(void){
  tc_hw_log("COMPAT_RESTORE",ok?"original state restored and verified":"restore unconfirmed; compatibility disabled; backup retained");
  pthread_mutex_unlock(&compat_lock);return ok;
 }
-bool tc_compat_set(int blue,int white,int amber){
+static bool apply_color(int blue,int white,int amber,bool quiet){
  pthread_mutex_lock(&compat_lock);
  uint8_t state[130],original[130];char info[160];
  snprintf(info,sizeof(info),"blue=%d white=%d amber=%d",blue,white,amber);
- tc_hw_log("COMPAT_REQUEST",info);
+ if(!quiet)tc_hw_log("COMPAT_REQUEST",info);
  bool ok=enabled&&have_backup&&indicator_read(state);
- if(ok){memcpy(original,state,130);dump("BEFORE_SET",state);ok=tc_compat_patch(state,blue,white,amber);}
+ if(ok){memcpy(original,state,130);if(!quiet)dump("BEFORE_SET",state);ok=tc_compat_patch(state,blue,white,amber);}
  if(ok){
-  dump("REQUESTED_SET",state);
+  if(!quiet)dump("REQUESTED_SET",state);
   // Deliberately no indicator_enable(): this is the hypothesis under test.
   ok=indicator_write(state);
   if(ok){
    uint8_t actual[130];int b,w,a;
-   usleep(50000);
+   if(!quiet)usleep(50000);
    ok=indicator_read(actual);
-   if(ok)dump("AFTER_SET",actual);
+   if(ok&&!quiet)dump("AFTER_SET",actual);
    indicator_levels(&b,&w,&a);
    snprintf(info,sizeof(info),"reported=%d/%d/%d requested=%d/%d/%d",b,w,a,blue,white,amber);
-   tc_hw_log("READBACK",info);
+   if(!quiet)tc_hw_log("READBACK",info);
    ok=ok&&b==blue&&w==white&&a==amber;
   }
   if(!ok){
@@ -133,6 +136,9 @@ bool tc_compat_set(int blue,int white,int amber){
   }
  }
  if(!ok)enabled=false; // One failure stops keeper retries; explicit enable is required again.
- tc_hw_log("COMPAT_RESULT",ok?"reported values match; physical light requires observation":"failed; compatibility writer disabled");
+ if(!quiet||!ok)tc_hw_log("COMPAT_RESULT",ok?"reported values match; physical light requires observation":"failed; compatibility writer disabled");
  pthread_mutex_unlock(&compat_lock);return ok;
 }
+
+bool tc_compat_set(int b,int w,int a){return apply_color(b,w,a,false);}
+bool tc_compat_set_quiet(int b,int w,int a){return apply_color(b,w,a,true);}

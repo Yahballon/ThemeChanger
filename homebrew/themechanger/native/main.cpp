@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// ThemeChanger v0.3.21 - native PS5 Homebrew UI / LiveShell bridge.
+// ThemeChanger v0.3.22 - native PS5 Homebrew UI / LiveShell bridge.
 #include "gfx/renderer.hpp"
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
@@ -110,15 +110,15 @@ void signalScreen(DrawList& d,const Font& f,unsigned a,const companion::Panel& s
  panel(d,{398,18,1458,951},13,Color::rgb(0x030d20),Color::rgb(0x405370));
  txt(d,f,a,"Signal Companion",432,69,36);
  txt(d,f,a,"Console light and startup tune | powered by Marice / ps5-signal",434,106,22,muted);
- const char* tabs[]={"Status","Colour","Startup"};
- for(int i=0;i<3;i++){
-  const float x=432+i*462.f;
-  panel(d,{x,130,442,58},10,Color::rgb(i==signal.tab()?0x085ef3:0x071b34),Color::rgb(0x1f3857));
-  txt(d,f,a,tabs[i],x+221,169,26,white,Align::center);
+ const char* tabs[]={"Status","Colour","Startup","Effects"};
+ for(int i=0;i<4;i++){
+  const float x=432+i*350.f;
+  panel(d,{x,130,340,58},10,Color::rgb(i==signal.tab()?0x085ef3:0x071b34),Color::rgb(0x1f3857));
+  txt(d,f,a,tabs[i],x+170,169,26,white,Align::center);
  }
  panel(d,{432,199,1390,61},9,Color::rgb(0x292014),Color::rgb(0x80643b));
- txt(d,f,a,"Standard support: firmware 9.00+ | Upstream tested on PS5 Pro 13.60",450,223,21,Color::rgb(0xffce83));
- txt(d,f,a,"Firmware 5.10 compatibility test is experimental and not confirmed.",450,247,19,muted);
+ txt(d,f,a,"LED colours: tested on firmware 5.10 | Original Signal support: 9.00+",450,223,21,Color::rgb(0xffce83));
+ txt(d,f,a,"Blue / White / Amber mixing; not full RGB. Effects continue after closing ThemeChanger.",450,247,19,muted);
  txt(d,f,a,f.fit(signal.detail(),22,1380),434,291,22,signal.online()?Color::rgb(0x4affbc):muted);
  if(signal.tab()==2){
   txt(d,f,a,signal.light_column()?"Startup light sequence":"Startup beep sequence",434,327,25);
@@ -155,7 +155,7 @@ void draw(DrawList& d,const Font& f,unsigned a,int selected,int page,int opt,con
    titleSize*=(titleRight-titleX-titleGap)/titleWidth;
  txt(d,f,a,"Theme",titleX,73,titleSize);
  txt(d,f,a,"Changer",titleX+f.measure("Theme",titleSize)+titleGap,73,titleSize,Color::rgb(0x0da4ff));
- const std::string credit="by YAHBALLON  v0.3.21";
+ const std::string credit="by YAHBALLON  v0.3.22";
  const float creditSize=std::min(18.f,18.f*(titleRight-titleX)/f.measure(credit,18.f));
  txt(d,f,a,credit,titleX,109,creditSize,muted);
  d.line(2,125,375,125,1,Color::rgb(0x233a57));
@@ -305,7 +305,7 @@ void draw(DrawList& d,const Font& f,unsigned a,int selected,int page,int opt,con
   }
  }else if(page==1){
   panel(d,{437,437,1420,470},13,Color::rgb(0x05132c),Color::rgb(0x254970));
-  txt(d,f,a,"ThemeChanger  v0.3.21",490,515,38);
+  txt(d,f,a,"ThemeChanger  v0.3.22",490,515,38);
   txt(d,f,a,"by YAHBALLON",490,565,28,Color::rgb(0x0da4ff));
   txt(d,f,a,"Native UI: ps5-homebrew-ui  |  Wallpaper engine: ZiZc3 LiveShell",490,610,24,muted);
   txt(d,f,a,"Includes LiveShell engine v1.1. Starts automatically via elfldr.",490,650,24);
@@ -350,7 +350,7 @@ int main(){
    asset="/data/homebrew/PPSA99891/assets";
  hui::signal::set_paths(asset,"/data/ThemeChanger/signal");
  companion::Panel signal;
- tc::log("BOOT","ThemeChanger v0.3.21 starting");
+ tc::log("BOOT","ThemeChanger v0.3.22 starting");
  const auto storage=wallpaper_storage::recover_indexed();
  tc::log("LIBRARY_RECOVERY",("restored="+std::to_string(storage.restored)+
   " existing="+std::to_string(storage.live)+

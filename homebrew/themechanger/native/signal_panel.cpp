@@ -6,13 +6,15 @@
 namespace companion {
 using namespace hui::signal;
 namespace {
-constexpr Mix presets[]={{255,0,0},{0,255,0},{0,0,255},{255,128,0},{255,0,128},{0,128,255},{0,0,0}};
+constexpr Mix presets[]={{255,0,0},{0,255,0},{0,0,255},{255,128,0},{32,0,255},{0,128,255},{0,0,0}};
+constexpr const char* effectNames[]={"Off / system colour","Pulse","Blink","4 colours","Colour wave (B/W/A)","Breathe"};
 constexpr const char* presetNames[]={"Blue","White","Amber","Ice","Violet mix","Warm white","Off"};
 std::string channels(const Mix& m){return std::to_string(m.blue)+" / "+std::to_string(m.white)+" / "+std::to_string(m.amber);}
 }
 int Panel::count() const {
  if(tab_==0)return autoload_.found?8:7;
  if(tab_==1)return 10;
+ if(tab_==3)return 5;
  return (int)(lights_?draft_.leds.size():draft_.beeps.size())+4;
 }
 void Panel::tick(float dt,bool visible){
@@ -31,6 +33,8 @@ void Panel::tick(float dt,bool visible){
   if(!startupDirty_){draft_.beeps=link_->config().beeps;draft_.leds=link_->config().leds;}
   if(!mixDirty_)mix_=link_->config().hold?link_->config().held:Mix{255,0,0};
  }
+ if(online()&&!effectRead_){send(Call::effect_status);effectRead_=true;}
+ if(!online())effectRead_=false;
  row_=std::clamp(row_,0,count()-1);
  if(link_->starting())detail_="Starting ps5-signal via the console's ELF loader...";
  else if(!link_->start_error().empty())detail_=link_->start_error();
@@ -44,7 +48,14 @@ void Panel::tick(float dt,bool visible){
   if(outcome.serial==seen_[i])continue;seen_[i]=outcome.serial;
   if(call==Call::launch||call==Call::quit)continue;
   if(outcome.reply.status>=200&&outcome.reply.status<300){
-   if(call==Call::compat_enable){compatActive_=true;message_="LED test enabled. Adjust Colour; use Restore LED state to undo.";}
+   if(call==Call::effect_status){
+    JsonValue status;
+    if(parse_json(outcome.reply.body,status)&&status["available"].as_bool()){
+     effectMode_=std::clamp((int)status["mode"].as_number(),0,5);effectPeriod_=std::clamp((int)status["period_ms"].as_number(4000),500,20000);
+    }continue;
+   }
+   if(call==Call::effect){message_="LED effect applied; runs in the background payload";}
+   else if(call==Call::compat_enable){compatActive_=true;message_="5.10 LED control ready. Colours and background effects are available.";}
    else if(call==Call::compat_restore){compatActive_=false;message_="Original LED state restored; test mode disabled";}
    else message_=call==Call::save_config?"Saved to ps5-signal. Applies on its next start.":"Signal command accepted";
   }else{
@@ -62,7 +73,6 @@ void Panel::send(Call call,std::string body){
  link_->service().send(call,std::move(body));message_="Sending...";
 }
 void Panel::save(bool startup,bool system){
- if(compatActive_){message_="Test mode: preview only. Restore LED state before saving configuration.";return;}
  if(!online()||!link_->has_config()){message_="Wait for the service configuration before saving";return;}
  if(link_->service().pending(Call::save_config)){message_="A save is already in progress";return;}
  // Keep the other section exactly as last fetched from the service.
@@ -74,7 +84,18 @@ void Panel::save(bool startup,bool system){
  send(Call::save_config,json);
  if(!startup)send(Call::color,system?system_color_request():color_request(mix_));
 }
+void Panel::effect(bool persist){
+ if(!online()||link_->status().version.find("tc-led510")==std::string::npos){message_="Restart ps5-signal to load the 5.10 effects service";return;}
+ preview_=false;previewDirty_=false;
+ const auto body="{\"mode\":"+std::to_string(effectMode_)+",\"period_ms\":"+std::to_string(effectPeriod_)+",\"blue\":"+std::to_string(mix_.blue)+",\"white\":"+std::to_string(mix_.white)+",\"amber\":"+std::to_string(mix_.amber)+",\"save\":"+(persist?"true":"false")+"}";
+ send(Call::effect,body);
+}
 void Panel::edit(int direction){
+ if(tab_==3){
+  if(row_==0)effectMode_=(effectMode_+direction+6)%6;
+  else if(row_==1)effectPeriod_=std::clamp(effectPeriod_+direction*500,500,20000);
+  return;
+ }
  if(tab_==1){
   if(row_<3){
    int* value=row_==0?&mix_.blue:row_==1?&mix_.white:&mix_.amber;
@@ -110,7 +131,7 @@ void Panel::edit(int direction){
 }
 void Panel::input(unsigned keys){
  if(!link_)return;
- if(keys&(Prev|Next)){if(preview_){preview_=false;previewDirty_=false;if(online())send(Call::stop);}tab_=(tab_+((keys&Next)?1:2))%3;row_=field_=0;return;}
+ if(keys&(Prev|Next)){if(preview_){preview_=false;previewDirty_=false;if(online())send(Call::stop);}tab_=(tab_+((keys&Next)?1:3))%4;row_=field_=0;return;}
  if(keys&Up){row_=std::max(0,row_-1);field_=0;}
  if(keys&Down){row_=std::min(count()-1,row_+1);field_=0;}
  if(tab_==0){
@@ -122,10 +143,10 @@ void Panel::input(unsigned keys){
    case 3:{LedStep step;step.name=LedName::blue;step.ms=500;send(Call::led,led_request({step}));break;}
    case 4:preview_=false;send(Call::stop);break;
    case 5:
-    if(link_->status().version.find("tc-compat1")==std::string::npos){message_="Choose Restart ps5-signal to load the test service first";break;}
+    if(link_->status().version.find("tc-led510")==std::string::npos){message_="Choose Restart ps5-signal to load the 5.10 service first";break;}
     preview_=false;send(Call::compat_enable);break;
    case 6:
-    if(link_->status().version.find("tc-compat1")==std::string::npos){message_="Restart ps5-signal first";break;}
+    if(link_->status().version.find("tc-led510")==std::string::npos){message_="Restart ps5-signal first";break;}
     preview_=false;previewDirty_=false;send(Call::compat_restore);break;
    case 7:
     if(!autoload_.found){message_="ps5-autoloader list unavailable. Allow /data in the sandbox.";break;}
@@ -150,6 +171,15 @@ void Panel::input(unsigned keys){
     palette_.slots[(size_t)slot_]=mix_;const auto error=save_palette(palette_);
     message_=error.empty()?"Colour saved in ThemeChanger":error;
    }
+  }
+ }else if(tab_==3){
+  if(keys&Left)edit(-1);if(keys&Right)edit(1);
+  if(keys&Save)effect(true);
+  if(keys&Confirm){
+   if(row_<2)edit(1);
+   else if(row_==2)effect(false);
+   else if(row_==3)effect(true);
+   else if(row_==4){effectMode_=0;effect(true);}
   }
  }else{
   if(!link_->has_config()){message_="Connecting: wait for the startup configuration";return;}
@@ -192,13 +222,14 @@ std::vector<std::pair<std::string,std::string>> Panel::rows() const {
  if(tab_==0){
   std::vector<std::pair<std::string,std::string>> out={{online()?"Restart ps5-signal":"Start ps5-signal",link_&&link_->starting()?"Starting...":"X"},
    {"Refresh status","X"},{"Test beeper","X"},{"Test blue light","X"},{"Stop previews","X"},
-   {"Enable 5.10 LED test (experimental)",compatActive_?"Enabled":"X"},{"Restore LED state","X"}};
+   {"Enable 5.10 LED control",compatActive_?"Enabled":"X"},{"Restore LED state","X"}};
   if(autoload_.found)out.push_back({"Start with ps5-autoloader",autoload_.listed?"On":"Off"});
   return out;
  }
  if(tab_==1)return {{"Blue",std::to_string(mix_.blue)},{"White",std::to_string(mix_.white)},{"Amber",std::to_string(mix_.amber)},
   {"Show colour on console",preview_?"On":"Off"},{"Keep this colour","X / Square"},{"Use system colour","X"},
   {"Colour preset",presetNames[preset_]},{"My colour slot",std::to_string(slot_+1)+" / 6"},{"Load my colour","X"},{"Save to my colour slot","X"}};
+ if(tab_==3)return {{"Effect mode",effectNames[effectMode_]},{"Cycle duration",std::to_string(effectPeriod_)+" ms"},{"Apply effect (until restart)","X"},{"Save effect for payload startup","X / Square"},{"Stop and restore system colour","X"}};
  std::vector<std::pair<std::string,std::string>> out;
  if(lights_)for(size_t i=0;i<draft_.leds.size();i++){
   const auto& s=draft_.leds[i];out.push_back({"Light "+std::to_string(i+1),led_step_text(s)+" | "+std::to_string(s.ms)+" ms"});
@@ -213,6 +244,7 @@ std::vector<std::pair<std::string,std::string>> Panel::rows() const {
 }
 std::string Panel::help() const {
  if(tab_==0)return "X: Select   |   L1/R1: Tabs   |   O: Sidebar";
+ if(tab_==3)return "Left/Right: Mode / speed   X: Select   Square: Save   Pulse/Blink/Breathe use your Colour mix";
  if(tab_==1)return "Left/Right: Adjust   X: Select   Square: Keep colour   L1/R1: Tabs   O: Sidebar";
  const char* field=lights_?(field_==0?"Kind":field_==1?"Colour / Blue / Level":field_==2?"Duration":field_==3?"White":"Amber"):(field_==0?"Tone":"Pause");
  return std::string("Editing: ")+field+" | X: Field  Left/Right: Adjust  Triangle: Beeps/Lights";

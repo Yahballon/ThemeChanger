@@ -26,6 +26,7 @@ public:
 private:
  void send(hui::signal::Call call,std::string body={});
  void save(bool startup,bool system=false);
+ void effect(bool save);
  void edit(int direction);
  int count() const;
  hui::signal::Link* link_=nullptr;
@@ -36,6 +37,8 @@ private:
  std::array<unsigned,(size_t)hui::signal::Call::count> seen_{};
  unsigned configSeen_=0;
  int tab_=0,row_=0,field_=0,preset_=0,slot_=0;
+ int effectMode_=1,effectPeriod_=4000;
+ bool effectRead_=false;
  bool compatActive_=false;
  bool attemptedStart_=false,loaded_=false,preview_=false,mixDirty_=false,startupDirty_=false,lights_=false;
  float previewAge_=0;

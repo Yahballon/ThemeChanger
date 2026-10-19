@@ -46,6 +46,7 @@ constexpr Endpoint kEndpoints[] = {
     {"POST", "/color"}, {"POST", "/beep"},  {"POST", "/led"},
     {"POST", "/stop"},  {"PUSH", ""},       {"POST", "/quit"},
     {"POST", "/compat/enable"}, {"POST", "/compat/restore"},
+    {"POST", "/effect"}, {"GET", "/effect"},
 };
 static_assert(std::size(kEndpoints) == static_cast<std::size_t>(Call::count));
 

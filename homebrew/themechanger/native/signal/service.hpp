@@ -67,6 +67,8 @@ enum class Call : unsigned char
     quit,        // POST /quit
     compat_enable, // POST /compat/enable (explicit experimental mode)
     compat_restore, // POST /compat/restore
+    effect, // POST /effect
+    effect_status, // GET /effect
     count,
 };
 

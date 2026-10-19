@@ -33,7 +33,7 @@ class FakeSignal final : public signal::Transport
                           held.blue, held.white, held.amber);
         char text[512];
         std::snprintf(text, sizeof(text),
-                      R"({"service":"ps5-signal","version":"0.1.0",)"
+                      R"({"service":"ps5-signal","version":"0.1.0-tc-led510",)"
                       R"("beep":{"playing":false,"muted":false,"volume":2},)"
                       R"("led":{"playing":false,"available":true,"level":1,)"
                       R"("color":{"available":true,"blue":%d,"white":%d,"amber":%d,"held":%s}}})",
@@ -75,6 +75,7 @@ class FakeSignal final : public signal::Transport
             saved_ = config_;
             return {200, R"({"saved":true})"};
         }
+        if(path=="/effect"&&method=="GET")return {200,R"({"available":true,"mode":0,"period_ms":4000})"};
         if (path == "/beep" || path == "/led")
             return {202, R"({"playing":true})"};
         return {200, R"({"ok":true})"};

@@ -1,15 +1,16 @@
 {
   "name": "ThemeChanger",
   "slug": "themechanger",
-  "version": "0.3.21",
+  "version": "0.3.22",
   "titleId": "PPSA99891",
   "contentId": "UP9000-PPSA99891_00-THEMECHANGER0000",
-  "contentVersion": "01.000.024",
-  "releaseTag": "themechanger-v0.3.21",
+  "contentVersion": "01.000.025",
+  "releaseTag": "themechanger-v0.3.22",
   "engine": "Integrated LiveShell 0.3.6 engine identification with automatic upstream-supported handover from stale daemon",
   "ui": "blackbearreloaded/ps5-homebrew-ui",
   "dataFolder": "/data/ThemeChanger",
   "online": "9K+ MotionBGS full catalog, search and tags; download-only Backgrounds library with immediate refresh and newest-first sorting",
   "videoCompatibility": "LiveShell H264 MP4 playback remains hardware decoder-limited with some videos exceeding the FullHD reference frame budget. Level header compatibility patch retained; no auto-transcoder due prior crash.",
-  "persistence": "Download MP4 first to durable /data/ThemeChanger/wallpapers; keep filenames in wallpapers.index and recover only saved names at startup; import v0.3.12 files in small UI increments."
+  "persistence": "Download MP4 first to durable /data/ThemeChanger/wallpapers; keep filenames in wallpapers.index and recover only saved names at startup; import v0.3.12 files in small UI increments.",
+  "signal": "Firmware 5.10 verified LED hold programs; background effects and saved startup modes"
 }

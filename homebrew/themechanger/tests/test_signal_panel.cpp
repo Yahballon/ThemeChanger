@@ -40,6 +40,18 @@ int main(){
  while(!panel.draft().leds.empty())panel.input(Remove);
  panel.input(Save);settle(link,panel);
  assert(parse_config(fake->saved(),saved,error));assert(saved.leds.empty());
+ // Background effects have independent apply/save/restore actions.
+ panel.input(Next);assert(panel.tab()==3);
+ panel.input(Right);assert(panel.rows()[0].second=="Pulse");
+ panel.input(Down);panel.input(Right);assert(panel.rows()[1].second=="4500 ms");
+ panel.input(Down);panel.input(Confirm);settle(link,panel);
+ auto effectRequests=fake->requests();bool applied=false;
+ for(const auto& request:effectRequests)if(request.find("POST /effect")!=std::string::npos&&request.find("\"mode\":1")!=std::string::npos&&request.find("\"save\":false")!=std::string::npos)applied=true;
+ assert(applied);
+ panel.input(Down);panel.input(Confirm);settle(link,panel);
+ effectRequests=fake->requests();assert(effectRequests.back().find("\"save\":true")!=std::string::npos);
+ panel.input(Down);panel.input(Confirm);settle(link,panel);
+ effectRequests=fake->requests();assert(effectRequests.back().find("\"mode\":0")!=std::string::npos);
  // No service: do not send default configuration over a previously saved one.
  fake->set_running(false);link.refresh();settle(link,panel);assert(!panel.online());
  const auto before=fake->saved();panel.input(Save);settle(link,panel);
