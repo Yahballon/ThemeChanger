@@ -183,7 +183,13 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/graphics-tools"
           "$RUNNER_TEMP/graphics-tools/bin/pip" install meson==1.10.1 Mako==1.3.10 PyYAML==6.0.2 packaging==25.0
           echo "$RUNNER_TEMP/graphics-tools/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache/restore@v4
+        id: graphics-cache
+        with:
+          path: ${{ runner.temp }}/theme-opengl/build/sdk/ps5-opengl-core33
+          key: theme-opengl-7f9bfabd-sdk042-clang18-1080p60-audit2-layout1
       - name: Build pinned public OpenGL source (replaces unavailable release archive)
+        if: steps.graphics-cache.outputs.cache-hit != 'true' 
         env:
           PS5_CLANG: clang-18
           LLVM_CONFIG: /usr/bin/llvm-config-21
@@ -206,7 +212,18 @@ jobs:
           make -C "$RUNNER_TEMP/theme-opengl" source-fetch sdk
           prefix="$RUNNER_TEMP/theme-opengl/build/sdk/ps5-opengl-core33"
           (cd "$prefix" && sha256sum --check --strict --quiet manifest.sha256)
+          # Source SDK uses the Core33 linker group; the UI template expects its old name.
+          cp "$prefix/lib/libPS5OpenGLCore33.a" "$prefix/lib/libPS5OpenGL.a"
+          (cd "$prefix" && sha256sum lib/libPS5OpenGL.a >> manifest.sha256)
+          (cd "$prefix" && sha256sum --check --strict --quiet manifest.sha256)
           echo "PS5_OPENGL_PREFIX=$prefix" >> "$GITHUB_ENV"
+      - uses: actions/cache/save@v4
+        if: steps.graphics-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/theme-opengl/build/sdk/ps5-opengl-core33
+          key: theme-opengl-7f9bfabd-sdk042-clang18-1080p60-audit2-layout1
+      - name: Select verified source SDK
+        run: echo "PS5_OPENGL_PREFIX=$RUNNER_TEMP/theme-opengl/build/sdk/ps5-opengl-core33" >> "$GITHUB_ENV"
       - name: Prepare PS5 graphics SDK
         working-directory: app
         env:
