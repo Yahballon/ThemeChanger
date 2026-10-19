@@ -202,6 +202,7 @@ jobs:
           git clone --no-checkout https://github.com/Gudui/ps5-opengl.git "$RUNNER_TEMP/theme-opengl"
           git -C "$RUNNER_TEMP/theme-opengl" checkout --detach 7f9bfabdddb187a11e4401058eba8c9e55194d0a
           test "$(git -C "$RUNNER_TEMP/theme-opengl" rev-parse HEAD)" = 7f9bfabdddb187a11e4401058eba8c9e55194d0a
+          python3 homebrew/themechanger/signal_build/patch_opengl_audit.py "$RUNNER_TEMP/theme-opengl"
           make -C "$RUNNER_TEMP/theme-opengl" source-fetch sdk
           prefix="$RUNNER_TEMP/theme-opengl/build/sdk/ps5-opengl-core33"
           (cd "$prefix" && sha256sum --check --strict --quiet manifest.sha256)
