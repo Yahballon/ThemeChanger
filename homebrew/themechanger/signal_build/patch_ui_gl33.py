@@ -7,7 +7,10 @@ def patch(root):
     p=root/'src/platform/ps5/display_egl.cpp'
     s=p.read_text();old='EGL_CONTEXT_MAJOR_VERSION_KHR,\n    4,\n    EGL_CONTEXT_MINOR_VERSION_KHR,\n    6,'
     assert s.count(old)==1,'UI EGL context declaration changed'
-    p.write_text(s.replace(old,'EGL_CONTEXT_MAJOR_VERSION_KHR,\n    3,\n    EGL_CONTEXT_MINOR_VERSION_KHR,\n    3,'))
+    s=s.replace(old,'EGL_CONTEXT_MAJOR_VERSION_KHR,\n    3,\n    EGL_CONTEXT_MINOR_VERSION_KHR,\n    3,')
+    gate='gl_major < 4 || (gl_major == 4 && gl_minor < 6)'
+    assert s.count(gate)==1,'UI runtime version guard changed'
+    p.write_text(s.replace(gate,'gl_major < 3 || (gl_major == 3 && gl_minor < 3)').replace('gl context below 4.6','gl context below 3.3'))
     p=root/'src/gfx/gl_program.cpp';s=p.read_text();assert '#version 460 core' in s
     p.write_text(s.replace('#version 460 core','#version 330 core'))
     mappings={

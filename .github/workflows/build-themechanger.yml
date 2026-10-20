@@ -356,7 +356,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: ThemeChanger-v0.3.23-PPSA99891
+          name: ThemeChanger-v0.3.24-PPSA99891
           path: app/dist/PPSA99891.zip
           if-no-files-found: error
       - name: Publish TESTBUILD-compatible release
@@ -364,5 +364,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view themechanger-v0.3.23 >/dev/null 2>&1; then exit 0; fi
-          gh release create themechanger-v0.3.23 app/dist/PPSA99891.zip --target "$GITHUB_SHA" --title "ThemeChanger v0.3.23" --notes-file homebrew/themechanger/RELEASE_NOTES.md
+          if gh release view themechanger-v0.3.24 >/dev/null 2>&1; then exit 0; fi
+          gh release create themechanger-v0.3.24 app/dist/PPSA99891.zip --target "$GITHUB_SHA" --title "ThemeChanger v0.3.24" --notes-file homebrew/themechanger/RELEASE_NOTES.md
