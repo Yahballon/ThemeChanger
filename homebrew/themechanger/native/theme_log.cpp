@@ -5,7 +5,19 @@
 #include <sys/stat.h>
 #include <cerrno>
 #include <cstring>
+#include <initializer_list>
 namespace tc {
+void ensure_storage_access() {
+ for(const char* p:{"/data/ThemeChanger","/data/ThemeChanger/cache","/data/ThemeChanger/meta","/data/ThemeChanger/wallpapers","/data/ThemeChanger/signal"}){
+  struct stat st{};
+  if(lstat(p,&st)!=0){if(errno==ENOENT)mkdir(p,0777);}
+  else if(S_ISDIR(st.st_mode))chmod(p,0777);
+ }
+ struct stat st{};
+ if(stat("/data/ThemeChanger/startup.log",&st)==0&&st.st_size>2*1024*1024)
+  rename("/data/ThemeChanger/startup.log","/data/ThemeChanger/startup.old.log");
+}
+
 void log(const char* event,const char* detail) {
  static std::mutex mutex;
  std::lock_guard<std::mutex> lock(mutex);

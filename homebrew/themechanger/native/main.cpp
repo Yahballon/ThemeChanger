@@ -337,6 +337,8 @@ void draw(DrawList& d,const Font& f,unsigned a,int selected,int page,int opt,con
 }
 }
 int main(){
+ tc::ensure_storage_access();
+ tc::log("BOOT_EARLY","ThemeChanger v0.3.23 graphics initialization");
  hui::ps5::Display display;if(!display.open())hui::sys::park();
  Renderer renderer;if(!renderer.init())hui::sys::park();
  const std::string title="/data/homebrew/PPSA99891/assets/";
@@ -350,7 +352,7 @@ int main(){
    asset="/data/homebrew/PPSA99891/assets";
  hui::signal::set_paths(asset,"/data/ThemeChanger/signal");
  companion::Panel signal;
- tc::log("BOOT","ThemeChanger v0.3.22 starting");
+ tc::log("BOOT","ThemeChanger v0.3.23 starting");
  const auto storage=wallpaper_storage::recover_indexed();
  tc::log("LIBRARY_RECOVERY",("restored="+std::to_string(storage.restored)+
   " existing="+std::to_string(storage.live)+

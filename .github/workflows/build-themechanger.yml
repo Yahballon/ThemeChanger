@@ -69,6 +69,8 @@ jobs:
           j['localizedParameters']['en-US']['titleName']=d['name']
           p.write_text(json.dumps(j,indent=2)+'\n')
           PY
+      - name: Adapt UI to pinned OpenGL 3.3 SDK
+        run: python3 homebrew/themechanger/signal_build/patch_ui_gl33.py app
       - name: Prepare pinned Signal sources with firmware 5.10 LED support
         run: |
           git clone https://github.com/Marice/ps5-signal.git /tmp/theme-signal
@@ -231,6 +233,8 @@ jobs:
           USE_CCACHE: '0'
           BUILD_JOBS: '4'
         run: bash tools/prepare-opengl.sh
+      - name: Validate OpenGL 3.3 UI shaders
+        run: python3 homebrew/themechanger/tests/test_gl33_shaders.py app
       - name: Build opt-in Signal compatibility service with upstream SDK v0.43
         run: |
           set -euo pipefail
@@ -352,7 +356,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: ThemeChanger-v0.3.22-PPSA99891
+          name: ThemeChanger-v0.3.23-PPSA99891
           path: app/dist/PPSA99891.zip
           if-no-files-found: error
       - name: Publish TESTBUILD-compatible release
@@ -360,5 +364,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view themechanger-v0.3.22 >/dev/null 2>&1; then exit 0; fi
-          gh release create themechanger-v0.3.22 app/dist/PPSA99891.zip --target "$GITHUB_SHA" --title "ThemeChanger v0.3.22" --notes-file homebrew/themechanger/RELEASE_NOTES.md
+          if gh release view themechanger-v0.3.23 >/dev/null 2>&1; then exit 0; fi
+          gh release create themechanger-v0.3.23 app/dist/PPSA99891.zip --target "$GITHUB_SHA" --title "ThemeChanger v0.3.23" --notes-file homebrew/themechanger/RELEASE_NOTES.md

@@ -1,2 +1,2 @@
 #pragma once
-namespace tc { void log(const char* event,const char* detail); }
+namespace tc { void ensure_storage_access(); void log(const char* event,const char* detail); }
